@@ -42,12 +42,22 @@ function fit_cpd_multistart(
                     start_seed,
                 ),
             )
+            latest = last(fits)
+            @printf(
+                "  start %d/%d: %s, iterations=%d, error=%.6f\n",
+                start,
+                starts,
+                latest.converged ? "converged" : "not converged",
+                latest.iterations,
+                latest.rel_error,
+            )
         catch error
             @warn "CPD start failed" rank start_seed exception = (error, catch_backtrace())
         end
     end
     isempty(fits) && error("all CPD starts failed for rank $rank")
-    sort!(fits; by = fit -> fit.rel_error)
+    # Prefer a converged solution whenever one exists, then minimize error.
+    sort!(fits; by = fit -> (!fit.converged, fit.rel_error))
     return fits
 end
 
@@ -167,10 +177,12 @@ function _maximum_assignment(scores::AbstractMatrix)
 end
 
 function stability_summary(fits::Vector{CPFit})
-    errors = getfield.(fits, :rel_error)
-    reference = first(fits)
+    converged_fits = filter(fit -> fit.converged, fits)
+    eligible = isempty(converged_fits) ? fits : converged_fits
+    errors = getfield.(eligible, :rel_error)
+    reference = first(eligible)
     congruences = Float64[]
-    for candidate in fits[2:end]
+    for candidate in eligible[2:end]
         scores = _component_similarity(reference, candidate)
         assignment = _maximum_assignment(scores)
         append!(congruences, [scores[r, assignment[r]] for r in axes(scores, 1)])
@@ -183,6 +195,7 @@ function stability_summary(fits::Vector{CPFit})
         mean_congruence = mean(congruences),
         min_congruence = minimum(congruences),
         successful_starts = length(fits),
+        converged_starts = length(converged_fits),
     )
 end
 

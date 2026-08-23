@@ -30,7 +30,8 @@ function main(args)
         simulation = simulation,
         n_train = smoke ? 30 : 400,
         ranks = smoke ? [2, 3] : [2, 3, 4, 5, 6],
-        starts = smoke  ? 30 : 300,
+        starts = smoke ? 2 : 10,
+        cpd_maxiter = smoke ? 50 : 500,
         oracle = oracle,
     )
 

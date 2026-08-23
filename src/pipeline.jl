@@ -6,14 +6,28 @@ Base.@kwdef struct ExperimentConfig
     cpd_maxiter::Int = 300
     cpd_tolerance::Float64 = 1e-6
     cpd_solver::Symbol = :als
-    ridge_penalty::Float64 = 1.0
+    ridge_penalties::Vector{Float64} = [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0, 10000.0]
+    ridge_cv_folds::Int = 5
+    ridge_cv_seed::Int = 20260827
     projection_penalties::Vector{Float64} = [0.0, 1e-8, 1e-6, 1e-4, 1e-2]
     split_seed::Int = 20260824
     cpd_seed::Int = 20260826
     oracle::Bool = false
 end
 
-function _metric_row(rank, method, target, metric, dimension, original_dimension, recon)
+function _metric_row(
+    rank,
+    method,
+    target,
+    metric,
+    dimension,
+    original_dimension,
+    recon,
+    ridge_penalty,
+    ridge_cv_mse,
+    cpd_converged,
+    cpd_iterations,
+)
     return (
         rank = rank,
         method = method,
@@ -25,25 +39,25 @@ function _metric_row(rank, method, target, metric, dimension, original_dimension
         original_dimension = original_dimension,
         compression_ratio = original_dimension / dimension,
         reconstruction_error = recon,
+        ridge_penalty = ridge_penalty,
+        ridge_cv_mse = ridge_cv_mse,
+        cpd_converged = cpd_converged,
+        cpd_iterations = cpd_iterations,
     )
 end
 
-function _target_scores(train_Z, test_Z, data, train_idx, test_idx, penalty)
-    alpha_metric = fit_and_score(
+function _target_scores(train_Z, test_Z, data, train_idx, test_idx, cfg)
+    train_targets = hcat(data.alpha[train_idx], data.beta[train_idx])
+    test_targets = hcat(data.alpha[test_idx], data.beta[test_idx])
+    return fit_ridge_targets_cv(
         train_Z,
         test_Z,
-        data.alpha[train_idx],
-        data.alpha[test_idx];
-        penalty,
+        train_targets,
+        test_targets;
+        penalties = cfg.ridge_penalties,
+        folds = cfg.ridge_cv_folds,
+        seed = cfg.ridge_cv_seed,
     )
-    beta_metric = fit_and_score(
-        train_Z,
-        test_Z,
-        data.beta[train_idx],
-        data.beta[test_idx];
-        penalty,
-    )
-    return alpha_metric, beta_metric
 end
 
 """Run simulation, inductive CPD recovery, PCA/raw baselines, and diagnostics."""
@@ -65,13 +79,13 @@ function run_pipeline(cfg::ExperimentConfig = ExperimentConfig())
     flat_test = flatten_agents(X_test)
     original_dimension = size(flat_train, 2)
 
-    raw_alpha, raw_beta = _target_scores(
+    raw_scores = _target_scores(
         flat_train,
         flat_test,
         data,
         train_idx,
         test_idx,
-        cfg.ridge_penalty,
+        cfg,
     )
 
     metric_rows = NamedTuple[]
@@ -96,34 +110,47 @@ function run_pipeline(cfg::ExperimentConfig = ExperimentConfig())
         best_fits[rank] = best
         train_cp = training_coordinates(best)
         test_cp = project_agents(X_test, best.factors[2], best.factors[3])
-        cp_alpha, cp_beta = _target_scores(
+        cp_scores = _target_scores(
             train_cp,
             test_cp,
             data,
             train_idx,
             test_idx,
-            cfg.ridge_penalty,
+            cfg,
         )
 
         pca = fit_pca(flat_train, rank)
         train_pca = transform(pca, flat_train)
         test_pca = transform(pca, flat_test)
-        pca_alpha, pca_beta = _target_scores(
+        pca_scores = _target_scores(
             train_pca,
             test_pca,
             data,
             train_idx,
             test_idx,
-            cfg.ridge_penalty,
+            cfg,
         )
 
-        for (method, alpha_metric, beta_metric, dimension, reconstruction) in [
-            ("CPD", cp_alpha, cp_beta, rank, best.rel_error),
-            ("PCA", pca_alpha, pca_beta, rank, NaN),
-            ("Raw", raw_alpha, raw_beta, original_dimension, NaN),
+        for (method, scores, dimension, reconstruction, converged, iterations) in [
+            ("CPD", cp_scores, rank, best.rel_error, best.converged, best.iterations),
+            ("PCA", pca_scores, rank, NaN, missing, missing),
+            ("Raw", raw_scores, original_dimension, NaN, missing, missing),
         ]
-            push!(metric_rows, _metric_row(rank, method, "alpha", alpha_metric, dimension, original_dimension, reconstruction))
-            push!(metric_rows, _metric_row(rank, method, "beta", beta_metric, dimension, original_dimension, reconstruction))
+            for (target_index, target) in enumerate(("alpha", "beta"))
+                push!(metric_rows, _metric_row(
+                    rank,
+                    method,
+                    target,
+                    scores.metrics[target_index],
+                    dimension,
+                    original_dimension,
+                    reconstruction,
+                    scores.selected_penalties[target_index],
+                    scores.cv_mse[target_index],
+                    converged,
+                    iterations,
+                ))
+            end
         end
 
         stability = stability_summary(fits)
@@ -139,15 +166,12 @@ function run_pipeline(cfg::ExperimentConfig = ExperimentConfig())
                 best.factors[3];
                 relative_penalty,
             )
-            penalty_alpha, penalty_beta = _target_scores(
-                train_cp,
-                penalized_test_cp,
-                data,
-                train_idx,
-                test_idx,
-                cfg.ridge_penalty,
-            )
-            for (target, metric) in (("alpha", penalty_alpha), ("beta", penalty_beta))
+            test_targets = (data.alpha[test_idx], data.beta[test_idx])
+            for (target_index, target) in enumerate(("alpha", "beta"))
+                metric = regression_metrics(
+                    test_targets[target_index],
+                    predict(cp_scores.models[target_index], penalized_test_cp),
+                )
                 push!(projection_sensitivity_rows, (
                     rank = rank,
                     target = target,
@@ -156,6 +180,7 @@ function run_pipeline(cfg::ExperimentConfig = ExperimentConfig())
                     mae = metric.mae,
                     rmse = metric.rmse,
                     condition_number = projection.condition_number,
+                    ridge_penalty = cp_scores.selected_penalties[target_index],
                 ))
             end
         end

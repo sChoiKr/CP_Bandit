@@ -85,6 +85,24 @@ end
     @test summary.ci95_low_r2 < summary.mean_r2 < summary.ci95_high_r2
 end
 
+@testset "training-only ridge CV" begin
+    X = reshape(collect(1.0:120.0), 30, 4)
+    Y = hcat(0.5 .* X[:, 1] .- X[:, 2], X[:, 3] .+ 0.1 .* X[:, 4])
+    fit = BanditCPPipeline.fit_ridge_targets_cv(
+        X[1:24, :],
+        X[25:30, :],
+        Y[1:24, :],
+        Y[25:30, :];
+        penalties = [0.01, 1.0, 100.0],
+        folds = 3,
+        seed = 7,
+    )
+    @test length(fit.models) == 2
+    @test length(fit.metrics) == 2
+    @test all(penalty -> penalty in fit.candidates, fit.selected_penalties)
+    @test all(isfinite, fit.cv_mse)
+end
+
 @testset "out-of-sample CP coordinate convention" begin
     T, F, R, N = 7, 4, 3, 5
     B = randn(T, R)
