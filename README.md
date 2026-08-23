@@ -1,6 +1,6 @@
 # Bandit CP recovery pipeline (Julia)
 
-This project tests one deliberately narrow claim:
+This project tests one claim:
 
 > Low-dimensional agent coordinates obtained from a CP approximation of
 > observable Q-learning trajectories retain predictive information about the
