@@ -150,7 +150,7 @@ def main():
         else:
             old.evaluate(folder)
             import pandas as pd
-            rows.extend(pd.read_csv(folder/'comparison_metrics.csv').to_dict('records'))
+            rows.extend(dict(row, env_index=env, rank=rank) for row in pd.read_csv(folder/'comparison_metrics.csv').to_dict('records'))
             for f in ('tensorly_fits.csv','tensorkitchen_fits.csv'):
                 for x in pd.read_csv(folder/f).to_dict('records'):
                     fits.append(dict(env_index=env,rank=rank,**x))
