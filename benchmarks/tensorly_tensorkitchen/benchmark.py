@@ -129,7 +129,7 @@ def evaluate(folder):
         Xte=read_array(folder/(task+'_test.f64'),(m[task+'_test'],m['n_trials'],4))
         ytr=np.loadtxt(folder/(task+'_train_y.csv'),delimiter=',')
         yte=np.loadtxt(folder/(task+'_test_y.csv'),delimiter=',')
-        for method,record_name in [('TensorLy','tensorly_fits.csv'),('TensorKitchen','tensorkitchen_fits.csv'),('TensorKitchen_NN','tensorkitchen_fits.csv')]:
+        for method,record_name in [('TensorLy','tensorly_fits.csv'),('TensorLy_NN','tensorly_fits.csv'),('TensorKitchen','tensorkitchen_fits.csv'),('TensorKitchen_NN','tensorkitchen_fits.csv')]:
             table=pd.read_csv(folder/record_name)
             entries=table[(table.task==task)&(table.method==method)]
             if entries.empty: continue
