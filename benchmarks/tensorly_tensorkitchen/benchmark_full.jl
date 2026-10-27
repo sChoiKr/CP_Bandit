@@ -20,7 +20,8 @@ function main()
     toy=rand(MersenneTwister(101),12,15,4)
     fit_one(toy,3,"TensorKitchen",901,2)
     fit_one(toy,3,"TensorKitchen_NN",902,2)
-    println("WARMUP_DONE";flush(stdout))
+    println("WARMUP_DONE")
+    flush(stdout)
     for env in lo:hi-1
         for R in ranks
             folder=joinpath(ROOT,@sprintf("env_%02d",env),"rank_$(R)")
