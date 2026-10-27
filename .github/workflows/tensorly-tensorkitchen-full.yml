@@ -13,7 +13,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        include:
+          - {shard: 0, start: 0, end: 5}
+          - {shard: 1, start: 5, end: 10}
+          - {shard: 2, start: 10, end: 15}
+          - {shard: 3, start: 15, end: 20}
     runs-on: ubuntu-latest
     timeout-minutes: 330
     env:
@@ -36,23 +40,23 @@ jobs:
           julia --project=benchmarks/tensorly_tensorkitchen/juliaenv -e 'using Pkg; Pkg.add(Pkg.PackageSpec(url="https://github.com/TensorKitchen/TensorKitchen.jl.git",rev="cc843ac1e98b5574c8c2a3db61580bf93419386b")); Pkg.status()'
       - name: Generate matched reward environments and train/test tensors
         env:
-          RW_ENV_START: ${{ matrix.shard * 5 }}
-          RW_ENV_END: ${{ matrix.shard * 5 + 5 }}
+          RW_ENV_START: ${{ matrix.start }}
+          RW_ENV_END: ${{ matrix.end }}
         run: python benchmarks/tensorly_tensorkitchen/full_suite.py generate
       - name: TensorLy CPD all starts
         env:
-          RW_ENV_START: ${{ matrix.shard * 5 }}
-          RW_ENV_END: ${{ matrix.shard * 5 + 5 }}
+          RW_ENV_START: ${{ matrix.start }}
+          RW_ENV_END: ${{ matrix.end }}
         run: python benchmarks/tensorly_tensorkitchen/full_suite.py tensorly
       - name: TensorKitchen CPD NNCPD after warmup
         env:
-          RW_ENV_START: ${{ matrix.shard * 5 }}
-          RW_ENV_END: ${{ matrix.shard * 5 + 5 }}
+          RW_ENV_START: ${{ matrix.start }}
+          RW_ENV_END: ${{ matrix.end }}
         run: julia --project=benchmarks/tensorly_tensorkitchen/juliaenv benchmarks/tensorly_tensorkitchen/benchmark_full.jl
       - name: Common evaluation and paired comparison
         env:
-          RW_ENV_START: ${{ matrix.shard * 5 }}
-          RW_ENV_END: ${{ matrix.shard * 5 + 5 }}
+          RW_ENV_START: ${{ matrix.start }}
+          RW_ENV_END: ${{ matrix.end }}
         run: python benchmarks/tensorly_tensorkitchen/full_suite.py evaluate
       - name: Save complete shard results
         if: always()
